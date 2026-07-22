@@ -53,6 +53,7 @@ typedef struct {
     atomic_uint spin_epoch;
     atomic_int  spin_claimed;
     atomic_int  spin_remaining;
+    atomic_int  sleeping_workers;
 
     /* K-5: caller-participates design.
      * num_threads  = total parallelism (N slices of work, indices 0..N-1)

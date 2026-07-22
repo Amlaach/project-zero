@@ -105,6 +105,7 @@ static void *worker_entry(void *opaque) {
              * Spinning when HW slots are already saturated wastes cycles
              * and causes priority inversion vs the caller's work slice.
              */
+            atomic_fetch_add_explicit(&tp->sleeping_workers, 1, memory_order_relaxed);
             pthread_mutex_lock(&tp->mutex);
             while (!tp->shutdown &&
                    atomic_load_explicit(&tp->spin_epoch,
@@ -116,6 +117,7 @@ static void *worker_entry(void *opaque) {
                                                   memory_order_relaxed);
             }
             pthread_mutex_unlock(&tp->mutex);
+            atomic_fetch_sub_explicit(&tp->sleeping_workers, 1, memory_order_relaxed);
         } else {
             int spins = 0;
             for (;;) {
@@ -129,19 +131,21 @@ static void *worker_entry(void *opaque) {
                 if (++spins < SPIN_LIMIT) {
                     CPU_RELAX();
                 } else {
-                    /* Fall back to OS sleep to avoid burning CPU when idle */
-                    pthread_mutex_lock(&tp->mutex);
-                    while (!tp->shutdown &&
-                           atomic_load_explicit(&tp->spin_epoch,
-                                                memory_order_acquire) == last_epoch) {
-                        pthread_cond_wait(&tp->cond_work, &tp->mutex);
-                    }
-                    if (!tp->shutdown) {
-                        last_epoch = atomic_load_explicit(&tp->spin_epoch,
-                                                          memory_order_relaxed);
-                    }
-                    pthread_mutex_unlock(&tp->mutex);
-                    break;
+            /* Fall back to OS sleep to avoid burning CPU when idle */
+            atomic_fetch_add_explicit(&tp->sleeping_workers, 1, memory_order_relaxed);
+            pthread_mutex_lock(&tp->mutex);
+            while (!tp->shutdown &&
+                   atomic_load_explicit(&tp->spin_epoch,
+                                        memory_order_acquire) == last_epoch) {
+                pthread_cond_wait(&tp->cond_work, &tp->mutex);
+            }
+            if (!tp->shutdown) {
+                last_epoch = atomic_load_explicit(&tp->spin_epoch,
+                                                  memory_order_relaxed);
+            }
+            pthread_mutex_unlock(&tp->mutex);
+            atomic_fetch_sub_explicit(&tp->sleeping_workers, 1, memory_order_relaxed);
+            break;
                 }
             }
         }
@@ -279,13 +283,15 @@ void threadpool_dispatch(ThreadPool *tp, tn_task_fn fn, void *arg, int total) {
     atomic_thread_fence(memory_order_release);
 
     if (n_workers > 0) {
-        /* Increment epoch — workers spin-watching this will wake immediately */
+        /* Increment epoch — workers spin-watching this will wake immediately in user-space */
         atomic_fetch_add_explicit(&tp->spin_epoch, 1u, memory_order_release);
-        /* Also broadcast to wake any workers that fell back to cond_var sleep */
-        pthread_mutex_lock(&tp->mutex);
-        tp->dispatch_epoch++;
-        pthread_cond_broadcast(&tp->cond_work);
-        pthread_mutex_unlock(&tp->mutex);
+        /* Broadcast ONLY if workers fell back to sleeping or in blocking wait mode */
+        if (tp->use_blocking_wait || atomic_load_explicit(&tp->sleeping_workers, memory_order_relaxed) > 0) {
+            pthread_mutex_lock(&tp->mutex);
+            tp->dispatch_epoch++;
+            pthread_cond_broadcast(&tp->cond_work);
+            pthread_mutex_unlock(&tp->mutex);
+        }
     }
 
     /*
