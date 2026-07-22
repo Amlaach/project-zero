@@ -42,6 +42,7 @@ typedef struct {
  * Q4K matmuls (e.g., shared-expert w1 and w3, both reading s->xb).
  */
 void tn_quantize_q8k(TnQ8KActBlock *out, const float *x, int n_blocks);
+TnQ8KActBlock *q8k_buf_ensure(int n_blocks);
 
 void parallel_matmul_q4k(float *out, const float *x, const uint8_t *w_q4k,
                           int n, int d, ThreadPool *tp);

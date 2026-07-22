@@ -370,6 +370,15 @@ void moe_ffn_forward(RunState              *s,
 
             /* Quantize each expert's s_gate_buf output after activation to Q8K */
             int hb_n_blocks = expert_hdim / TN_Q8K_BLOCK;
+            int total_hb_blocks = valid_k * hb_n_blocks;
+            static TnQ8KActBlock *s_hb_q8k_all = NULL;
+            static int s_hb_q8k_all_blocks = 0;
+            if (s_hb_q8k_all_blocks < total_hb_blocks) {
+                free(s_hb_q8k_all);
+                s_hb_q8k_all = (TnQ8KActBlock *)malloc((size_t)total_hb_blocks * sizeof(TnQ8KActBlock));
+                s_hb_q8k_all_blocks = s_hb_q8k_all ? total_hb_blocks : 0;
+            }
+
             TnQ8KActBlock *hb_q8k_array[MOE_SCORE_BUF_SIZE];
 
             for (int i = 0; i < valid_k; i++) {
@@ -380,7 +389,7 @@ void moe_ffn_forward(RunState              *s,
                 else                    tn_silu(hb, expert_hdim);
                 tn_vec_mul(hb, hb, hb2, expert_hdim);
 
-                hb_q8k_array[i] = q8k_buf_ensure(hb_n_blocks);
+                hb_q8k_array[i] = s_hb_q8k_all ? (s_hb_q8k_all + (size_t)i * hb_n_blocks) : NULL;
                 if (hb_q8k_array[i]) {
                     tn_quantize_q8k(hb_q8k_array[i], hb, hb_n_blocks);
                 }

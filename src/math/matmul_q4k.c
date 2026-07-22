@@ -53,7 +53,7 @@
 static TnQ8KActBlock *s_q8k_buf       = NULL;
 static int            s_q8k_buf_blocks = 0;
 
-static TnQ8KActBlock *q8k_buf_ensure(int n_blocks) {
+TnQ8KActBlock *q8k_buf_ensure(int n_blocks) {
     if (s_q8k_buf_blocks < n_blocks) {
         free(s_q8k_buf);
         s_q8k_buf = (TnQ8KActBlock *)malloc((size_t)n_blocks * sizeof(TnQ8KActBlock));
