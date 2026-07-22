@@ -6,7 +6,7 @@
 #include "core/moe_config.h"
 #include "core/run_state.h"
 #include "core/weights.h"
-#include "core/gguf_quant.h"
+#include "core/gguf_reader.h"
 #include "math/simd_dispatch.h"
 #include "math/matmul_q4k.h"
 #include "transformer/moe_ffn.h"

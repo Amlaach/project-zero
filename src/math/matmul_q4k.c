@@ -423,23 +423,18 @@ static void matmul_q4k_task(void *arg, int thread_id, int start, int end) {
 
 void parallel_matmul_q4k(float *out, const float *x, const uint8_t *w_q4k,
                           int n, int d, ThreadPool *tp) {
-    int n_blocks   = n / Q4K_SUPER;
-    size_t row_bytes = (size_t)n_blocks * Q4K_BYTES;
+    parallel_matmul_q4k_pf(out, x, w_q4k, NULL, n, d, tp);
+}
 
+void parallel_matmul_q4k_pf(float *out, const float *x, const uint8_t *w_q4k,
+                           const uint8_t *w_next, int n, int d, ThreadPool *tp) {
+    if (!out || !x || !w_q4k) return;
+    int n_blocks   = n / Q4K_SUPER;
     TnQ8KActBlock *acts = q8k_buf_ensure(n_blocks);
     if (!acts) return;  /* OOM — caller will get zero output silently */
     quantize_to_q8k(acts, x, n_blocks);
 
-    MatmulQ4KArgs args = {
-        .out       = out,
-        .w         = w_q4k,
-        .acts      = acts,
-        .n_blocks  = n_blocks,
-        .d         = d,
-        .row_bytes = row_bytes,
-    };
-    if (!tp) { matmul_q4k_task(&args, 0, 0, d); return; }
-    threadpool_dispatch(tp, matmul_q4k_task, &args, d);
+    parallel_matmul_q4k_preq_pf(out, acts, w_q4k, w_next, n, d, tp);
 }
 
 /* ── Batched Q4K: k weight matrices, shared input x ─────────────────────── */
@@ -520,6 +515,7 @@ void parallel_matmul_q4k_preq(float *out, const TnQ8KActBlock *acts,
 void parallel_matmul_q4k_preq_pf(float *out, const TnQ8KActBlock *acts,
                                   const uint8_t *w_q4k, const uint8_t *w_next,
                                   int n, int d, ThreadPool *tp) {
+    if (!out || !acts || !w_q4k) return;
     int    n_blocks  = n / Q4K_SUPER;
     size_t row_bytes = (size_t)n_blocks * Q4K_BYTES;
 

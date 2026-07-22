@@ -56,6 +56,14 @@ void parallel_matmul_q4k_preq(float *out, const TnQ8KActBlock *acts,
                                int n, int d, ThreadPool *tp);
 
 /*
+ * parallel_matmul_q4k_pf — same as parallel_matmul_q4k but accepts
+ * an optional w_next pointer (next expert's Q4_K weight matrix) to issue
+ * interleaved software prefetch hints for corresponding row offsets.
+ */
+void parallel_matmul_q4k_pf(float *out, const float *x, const uint8_t *w_q4k,
+                           const uint8_t *w_next, int n, int d, ThreadPool *tp);
+
+/*
  * parallel_matmul_q4k_preq_pf — same as parallel_matmul_q4k_preq but accepts
  * an optional w_next pointer (next expert's Q4_K weight matrix) to issue
  * interleaved software prefetch hints for corresponding row offsets.

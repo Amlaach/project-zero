@@ -382,8 +382,8 @@ void moe_ffn_forward(RunState              *s,
                 parallel_matmul_q8_0(s->q, s->hb, (const uint8_t *)w->moe_w2[layer][e],
                                      expert_hdim, dim, tp);
             } else if (w2_qtype == GGUF_TYPE_Q4_K) {
-                parallel_matmul_q4k_preq_pf(s->q, NULL, (const uint8_t *)w->moe_w2[layer][e],
-                                            w2_next, expert_hdim, dim, tp);
+                parallel_matmul_q4k_pf(s->q, s->hb, (const uint8_t *)w->moe_w2[layer][e],
+                                       w2_next, expert_hdim, dim, tp);
             } else {
                 size_t n_el = (size_t)expert_hdim * dim;
                 float *fw = dequant_expert_weight(w->moe_w2[layer][e], w2_qtype, n_el);
