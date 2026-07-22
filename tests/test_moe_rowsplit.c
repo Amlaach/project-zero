@@ -6,6 +6,7 @@
 #include "core/moe_config.h"
 #include "core/run_state.h"
 #include "core/weights.h"
+#include "core/gguf_quant.h"
 #include "math/simd_dispatch.h"
 #include "math/matmul_q4k.h"
 #include "transformer/moe_ffn.h"
@@ -15,6 +16,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef Q4K_SUPER
+#define Q4K_SUPER 256
+#endif
+#ifndef Q4K_BYTES
+#define Q4K_BYTES 144
+#endif
 
 /* ================================================================
  * TEST 1: Expert Address Sorting
@@ -93,10 +101,10 @@ static void test_moe_rowsplit_numerical_equivalence(void) {
     w.rms_ffn_weight[0] = (float *)calloc(cfg.dim, sizeof(float));
     for (int i = 0; i < cfg.dim; i++) w.rms_ffn_weight[0][i] = 1.0f;
 
-    w.moe_gate_w = (float **)calloc(1, sizeof(float *));
-    w.moe_gate_w[0] = (float *)calloc(mc.num_experts * cfg.dim, sizeof(float));
+    w.moe_gate_w = (tn_i8 **)calloc(1, sizeof(tn_i8 *));
+    w.moe_gate_w[0] = (tn_i8 *)calloc(mc.num_experts * cfg.dim, sizeof(float));
     for (int i = 0; i < mc.num_experts * cfg.dim; i++) {
-        w.moe_gate_w[0][i] = (float)((i % 11) - 5) * 0.05f;
+        ((float *)w.moe_gate_w[0])[i] = (float)((i % 11) - 5) * 0.05f;
     }
 
     /* Allocate dummy Q4K weight structures */
@@ -108,17 +116,17 @@ static void test_moe_rowsplit_numerical_equivalence(void) {
     w.expert_w13_quant_type = GGUF_TYPE_Q4_K;
     w.expert_w2_quant_type  = GGUF_TYPE_Q4_K;
 
-    w.moe_w1 = (void ***)calloc(1, sizeof(void **));
-    w.moe_w2 = (void ***)calloc(1, sizeof(void **));
-    w.moe_w3 = (void ***)calloc(1, sizeof(void **));
-    w.moe_w1[0] = (void **)calloc(mc.num_experts, sizeof(void *));
-    w.moe_w2[0] = (void **)calloc(mc.num_experts, sizeof(void *));
-    w.moe_w3[0] = (void **)calloc(mc.num_experts, sizeof(void *));
+    w.moe_w1 = (tn_i8 ***)calloc(1, sizeof(tn_i8 **));
+    w.moe_w2 = (tn_i8 ***)calloc(1, sizeof(tn_i8 **));
+    w.moe_w3 = (tn_i8 ***)calloc(1, sizeof(tn_i8 **));
+    w.moe_w1[0] = (tn_i8 **)calloc(mc.num_experts, sizeof(tn_i8 *));
+    w.moe_w2[0] = (tn_i8 **)calloc(mc.num_experts, sizeof(tn_i8 *));
+    w.moe_w3[0] = (tn_i8 **)calloc(mc.num_experts, sizeof(tn_i8 *));
 
     for (int e = 0; e < mc.num_experts; e++) {
-        w.moe_w1[0][e] = calloc(q4k_bytes_w13, 1);
-        w.moe_w2[0][e] = calloc(q4k_bytes_w2, 1);
-        w.moe_w3[0][e] = calloc(q4k_bytes_w13, 1);
+        w.moe_w1[0][e] = (tn_i8 *)calloc(q4k_bytes_w13, 1);
+        w.moe_w2[0][e] = (tn_i8 *)calloc(q4k_bytes_w2, 1);
+        w.moe_w3[0][e] = (tn_i8 *)calloc(q4k_bytes_w13, 1);
     }
 
     ThreadPool *tp = threadpool_create(4);
