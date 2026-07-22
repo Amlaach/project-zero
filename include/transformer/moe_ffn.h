@@ -8,6 +8,15 @@
 #include "threading/thread_pool.h"
 #include <stdint.h>
 
+typedef enum {
+    TN_MOE_THREADING_ROWSPLIT = 0, /* Address-sorted sequential per-expert row-split matmul (default) */
+    TN_MOE_THREADING_LEGACY   = 1  /* Batched multi-expert parallel matmul */
+} TnMoeThreadingMode;
+
+void moe_set_threading_mode(const char *mode_str);
+TnMoeThreadingMode moe_get_threading_mode(void);
+void moe_sort_selected_experts(int *selected_experts, float *selected_scores, int k);
+
 /**
  * moe_ffn_forward — Execute the MoE FFN for one token in one layer.
  * (full description unchanged)

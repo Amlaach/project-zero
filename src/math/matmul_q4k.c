@@ -398,6 +398,7 @@ static float dot_q4k_row_q8k(const uint8_t *row_q4k,
 typedef struct {
     float              *out;
     const uint8_t      *w;
+    const uint8_t      *w_next;
     const TnQ8KActBlock *acts;
     int n_blocks, d;
     size_t row_bytes;
@@ -406,9 +407,18 @@ typedef struct {
 static void matmul_q4k_task(void *arg, int thread_id, int start, int end) {
     (void)thread_id;
     const MatmulQ4KArgs *a = (const MatmulQ4KArgs *)arg;
-    for (int i = start; i < end; i++)
-        a->out[i] = dot_q4k_row_q8k(a->w + (size_t)i * a->row_bytes,
+    const uint8_t *w_next  = a->w_next;
+    size_t row_bytes       = a->row_bytes;
+    for (int i = start; i < end; i++) {
+        if (w_next && (i - start) % 4 == 0) {
+            const char *pf_ptr = (const char *)(w_next + (size_t)i * row_bytes);
+            for (int p = 0; p < (int)row_bytes; p += 64) {
+                TN_PREFETCH_T1(pf_ptr + p);
+            }
+        }
+        a->out[i] = dot_q4k_row_q8k(a->w + (size_t)i * row_bytes,
                                       a->acts, a->n_blocks);
+    }
 }
 
 void parallel_matmul_q4k(float *out, const float *x, const uint8_t *w_q4k,
@@ -504,12 +514,19 @@ void tn_quantize_q8k(TnQ8KActBlock *out, const float *x, int n_blocks) {
 void parallel_matmul_q4k_preq(float *out, const TnQ8KActBlock *acts,
                                const uint8_t *w_q4k,
                                int n, int d, ThreadPool *tp) {
+    parallel_matmul_q4k_preq_pf(out, acts, w_q4k, NULL, n, d, tp);
+}
+
+void parallel_matmul_q4k_preq_pf(float *out, const TnQ8KActBlock *acts,
+                                  const uint8_t *w_q4k, const uint8_t *w_next,
+                                  int n, int d, ThreadPool *tp) {
     int    n_blocks  = n / Q4K_SUPER;
     size_t row_bytes = (size_t)n_blocks * Q4K_BYTES;
 
     MatmulQ4KArgs args = {
         .out       = out,
         .w         = w_q4k,
+        .w_next    = w_next,
         .acts      = acts,
         .n_blocks  = n_blocks,
         .d         = d,
