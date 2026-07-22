@@ -23,13 +23,27 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q gcc clang make
+          sudo apt-get install -y -q gcc clang make cmake
 
       - name: Build (release)
         run: make release CC=${{ matrix.compiler }}
 
-      - name: Run tests
+      - name: Run tests (Unconstrained)
         run: make test CC=${{ matrix.compiler }}
+
+      - name: Run tests (Aggressive 1-core constraint via taskset)
+        run: taskset -c 0 make test CC=${{ matrix.compiler }}
+
+      - name: Run tests (Aggressive 2-core constraint via taskset)
+        run: taskset -c 0,1 make test CC=${{ matrix.compiler }}
+
+      - name: Build & Test (CMake + Sanitizers)
+        run: |
+          mkdir -p build_cmake
+          cd build_cmake
+          cmake -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DENABLE_TESTS=ON ..
+          make -j$(nproc)
+          ctest --output-on-failure
 
       - name: Build (debug + sanitizers)
         run: make debug CC=${{ matrix.compiler }}

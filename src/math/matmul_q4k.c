@@ -576,13 +576,14 @@ static void matmul_q4k_fused_w13_task(void *arg, int thread_id, int start, int e
         int row = r % d;
 
         if (row % 4 == 0 && i + 1 < k) {
+            int pf_limit = (int)row_bytes < 256 ? (int)row_bytes : 256;
             if (a->w1_ptrs[i + 1]) {
                 const char *pf1 = (const char *)(a->w1_ptrs[i + 1] + (size_t)row * row_bytes);
-                for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf1 + p);
+                for (int p = 0; p < pf_limit; p += 64) TN_PREFETCH_T1(pf1 + p);
             }
             if (a->w3_ptrs[i + 1]) {
                 const char *pf3 = (const char *)(a->w3_ptrs[i + 1] + (size_t)row * row_bytes);
-                for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf3 + p);
+                for (int p = 0; p < pf_limit; p += 64) TN_PREFETCH_T1(pf3 + p);
             }
         }
 
@@ -644,8 +645,9 @@ static void matmul_q4k_fused_w2_task(void *arg, int thread_id, int start, int en
         int row = r % d;
 
         if (row % 4 == 0 && i + 1 < k && a->w2_ptrs[i + 1]) {
+            int pf_limit = (int)row_bytes < 256 ? (int)row_bytes : 256;
             const char *pf2 = (const char *)(a->w2_ptrs[i + 1] + (size_t)row * row_bytes);
-            for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf2 + p);
+            for (int p = 0; p < pf_limit; p += 64) TN_PREFETCH_T1(pf2 + p);
         }
 
         size_t offset = (size_t)i * d + row;
