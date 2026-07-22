@@ -552,3 +552,129 @@ void parallel_matmul_q4k_batch_preq(float * const *outs,
     if (!tp) { matmul_q4k_batch_task(&args, 0, 0, k * d); return; }
     threadpool_dispatch(tp, matmul_q4k_batch_task, &args, k * d);
 }
+
+/* ── Fused Row-Split Q4K: w1 + w3 ────────────────────────────────────────── */
+typedef struct {
+    float *hb_out;
+    float *hb2_out;
+    const TnQ8KActBlock *acts;
+    const uint8_t * const *w1_ptrs;
+    const uint8_t * const *w3_ptrs;
+    int n_blocks, d, k;
+    size_t row_bytes;
+} MatmulQ4KFusedW13Args;
+
+static void matmul_q4k_fused_w13_task(void *arg, int thread_id, int start, int end) {
+    (void)thread_id;
+    const MatmulQ4KFusedW13Args *a = (const MatmulQ4KFusedW13Args *)arg;
+    int d = a->d;
+    int k = a->k;
+    size_t row_bytes = a->row_bytes;
+
+    for (int r = start; r < end; r++) {
+        int i   = r / d;
+        int row = r % d;
+
+        if (row % 4 == 0 && i + 1 < k) {
+            if (a->w1_ptrs[i + 1]) {
+                const char *pf1 = (const char *)(a->w1_ptrs[i + 1] + (size_t)row * row_bytes);
+                for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf1 + p);
+            }
+            if (a->w3_ptrs[i + 1]) {
+                const char *pf3 = (const char *)(a->w3_ptrs[i + 1] + (size_t)row * row_bytes);
+                for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf3 + p);
+            }
+        }
+
+        size_t offset = (size_t)i * d + row;
+        size_t w_off  = (size_t)row * row_bytes;
+
+        if (a->w1_ptrs[i] && a->hb_out) {
+            a->hb_out[offset] = dot_q4k_row_q8k(a->w1_ptrs[i] + w_off, a->acts, a->n_blocks);
+        }
+        if (a->w3_ptrs[i] && a->hb2_out) {
+            a->hb2_out[offset] = dot_q4k_row_q8k(a->w3_ptrs[i] + w_off, a->acts, a->n_blocks);
+        }
+    }
+}
+
+void parallel_matmul_q4k_fused_rowsplit_w13(float *hb_out, float *hb2_out,
+                                             const TnQ8KActBlock *acts,
+                                             const uint8_t * const *w1_ptrs,
+                                             const uint8_t * const *w3_ptrs,
+                                             int n, int d, int k, ThreadPool *tp) {
+    if (!acts || !w1_ptrs || !w3_ptrs || k <= 0 || d <= 0) return;
+    int n_blocks = n / Q4K_SUPER;
+    size_t row_bytes = (size_t)n_blocks * Q4K_BYTES;
+
+    MatmulQ4KFusedW13Args args = {
+        .hb_out   = hb_out,
+        .hb2_out  = hb2_out,
+        .acts     = acts,
+        .w1_ptrs  = w1_ptrs,
+        .w3_ptrs  = w3_ptrs,
+        .n_blocks = n_blocks,
+        .d        = d,
+        .k        = k,
+        .row_bytes= row_bytes,
+    };
+    int total_rows = k * d;
+    if (!tp) { matmul_q4k_fused_w13_task(&args, 0, 0, total_rows); return; }
+    threadpool_dispatch(tp, matmul_q4k_fused_w13_task, &args, total_rows);
+}
+
+/* ── Fused Row-Split Q4K: w2 ─────────────────────────────────────────────── */
+typedef struct {
+    float *q_out;
+    const TnQ8KActBlock * const *acts_array;
+    const uint8_t * const *w2_ptrs;
+    int n_blocks, d, k;
+    size_t row_bytes;
+} MatmulQ4KFusedW2Args;
+
+static void matmul_q4k_fused_w2_task(void *arg, int thread_id, int start, int end) {
+    (void)thread_id;
+    const MatmulQ4KFusedW2Args *a = (const MatmulQ4KFusedW2Args *)arg;
+    int d = a->d;
+    int k = a->k;
+    size_t row_bytes = a->row_bytes;
+
+    for (int r = start; r < end; r++) {
+        int i   = r / d;
+        int row = r % d;
+
+        if (row % 4 == 0 && i + 1 < k && a->w2_ptrs[i + 1]) {
+            const char *pf2 = (const char *)(a->w2_ptrs[i + 1] + (size_t)row * row_bytes);
+            for (int p = 0; p < (int)row_bytes; p += 64) TN_PREFETCH_T1(pf2 + p);
+        }
+
+        size_t offset = (size_t)i * d + row;
+        size_t w_off  = (size_t)row * row_bytes;
+
+        if (a->w2_ptrs[i] && a->acts_array[i] && a->q_out) {
+            a->q_out[offset] = dot_q4k_row_q8k(a->w2_ptrs[i] + w_off, a->acts_array[i], a->n_blocks);
+        }
+    }
+}
+
+void parallel_matmul_q4k_fused_rowsplit_w2(float *q_out,
+                                            const TnQ8KActBlock * const *acts_array,
+                                            const uint8_t * const *w2_ptrs,
+                                            int n, int d, int k, ThreadPool *tp) {
+    if (!acts_array || !w2_ptrs || !q_out || k <= 0 || d <= 0) return;
+    int n_blocks = n / Q4K_SUPER;
+    size_t row_bytes = (size_t)n_blocks * Q4K_BYTES;
+
+    MatmulQ4KFusedW2Args args = {
+        .q_out      = q_out,
+        .acts_array = acts_array,
+        .w2_ptrs    = w2_ptrs,
+        .n_blocks   = n_blocks,
+        .d          = d,
+        .k          = k,
+        .row_bytes  = row_bytes,
+    };
+    int total_rows = k * d;
+    if (!tp) { matmul_q4k_fused_w2_task(&args, 0, 0, total_rows); return; }
+    threadpool_dispatch(tp, matmul_q4k_fused_w2_task, &args, total_rows);
+}

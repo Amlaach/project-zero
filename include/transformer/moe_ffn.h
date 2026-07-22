@@ -9,8 +9,9 @@
 #include <stdint.h>
 
 typedef enum {
-    TN_MOE_THREADING_ROWSPLIT = 0, /* Address-sorted sequential per-expert row-split matmul (default) */
-    TN_MOE_THREADING_LEGACY   = 1  /* Batched multi-expert parallel matmul */
+    TN_MOE_THREADING_ROWSPLIT_FUSED = 0, /* Fused layer-level row-split GEMV with prefetching (default) */
+    TN_MOE_THREADING_ROWSPLIT       = 1, /* Sequential per-expert row-split GEMV */
+    TN_MOE_THREADING_LEGACY         = 2  /* Batched multi-expert parallel matmul */
 } TnMoeThreadingMode;
 
 void moe_set_threading_mode(const char *mode_str);

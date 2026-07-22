@@ -102,4 +102,19 @@ void parallel_matmul_q4k_batch_preq(float * const *outs,
                                      const uint8_t * const *ws,
                                      int n, int d, int k, ThreadPool *tp);
 
+/*
+ * Fused Row-Split GEMV dispatches: 1 threadpool dispatch for all routed experts,
+ * splitting total_rows = top_k * d across T threads without inter-expert barriers.
+ */
+void parallel_matmul_q4k_fused_rowsplit_w13(float *hb_out, float *hb2_out,
+                                             const TnQ8KActBlock *acts,
+                                             const uint8_t * const *w1_ptrs,
+                                             const uint8_t * const *w3_ptrs,
+                                             int n, int d, int k, ThreadPool *tp);
+
+void parallel_matmul_q4k_fused_rowsplit_w2(float *q_out,
+                                            const TnQ8KActBlock * const *acts_array,
+                                            const uint8_t * const *w2_ptrs,
+                                            int n, int d, int k, ThreadPool *tp);
+
 #endif /* TN_MATMUL_Q4K_H */

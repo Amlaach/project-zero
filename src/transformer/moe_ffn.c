@@ -46,7 +46,7 @@ static int    s_batch_dim    = 0;
 static TnQ8KActBlock *s_xb_q8k        = NULL;
 static int            s_xb_q8k_blocks = 0;
 
-static TnMoeThreadingMode s_moe_threading_mode = TN_MOE_THREADING_ROWSPLIT;
+static TnMoeThreadingMode s_moe_threading_mode = TN_MOE_THREADING_ROWSPLIT_FUSED;
 
 void moe_set_threading_mode(const char *mode_str) {
     if (!mode_str) return;
@@ -54,6 +54,8 @@ void moe_set_threading_mode(const char *mode_str) {
         s_moe_threading_mode = TN_MOE_THREADING_LEGACY;
     } else if (strcmp(mode_str, "rowsplit") == 0) {
         s_moe_threading_mode = TN_MOE_THREADING_ROWSPLIT;
+    } else if (strcmp(mode_str, "rowsplit-fused") == 0 || strcmp(mode_str, "fused") == 0) {
+        s_moe_threading_mode = TN_MOE_THREADING_ROWSPLIT_FUSED;
     }
 }
 
@@ -323,7 +325,93 @@ void moe_ffn_forward(RunState              *s,
     t_step = tn_step_timing_enabled() ? tn_step_timing_now_ns() : 0;
     if (w->has_expert_quant &&
         w->expert_w13_quant_type == GGUF_TYPE_Q4_K &&
-        s_moe_threading_mode == TN_MOE_THREADING_ROWSPLIT) {
+        s_moe_threading_mode == TN_MOE_THREADING_ROWSPLIT_FUSED) {
+
+        int w2_qtype = (w->expert_w2_quant_per_layer &&
+                        w->expert_w2_quant_per_layer[layer])
+                       ? w->expert_w2_quant_per_layer[layer]
+                       : w->expert_w2_quant_type;
+
+        /* Grow module-level scratch buffers if dimensions increased */
+        if (s_batch_top_k < top_k || s_batch_ehdim < expert_hdim ||
+            s_batch_dim < dim) {
+            free(s_gate_buf); free(s_up_buf); free(s_down_buf);
+            s_gate_buf = (float *)malloc((size_t)top_k * expert_hdim * sizeof(float));
+            s_up_buf   = (float *)malloc((size_t)top_k * expert_hdim * sizeof(float));
+            s_down_buf = (float *)malloc((size_t)top_k * dim          * sizeof(float));
+            s_batch_top_k = top_k;
+            s_batch_ehdim = expert_hdim;
+            s_batch_dim   = dim;
+        }
+
+        const uint8_t *w1_ptrs[MOE_SCORE_BUF_SIZE];
+        const uint8_t *w3_ptrs[MOE_SCORE_BUF_SIZE];
+        const uint8_t *w2_ptrs[MOE_SCORE_BUF_SIZE];
+        float          sel_sc [MOE_SCORE_BUF_SIZE];
+        int            valid_k = 0;
+
+        for (int i = 0; i < top_k; i++) {
+            int e = selected_experts[i];
+            if (e < 0 || e >= num_experts) continue;
+            if (g_expert_hits && layer < g_track_n_layers && e < g_track_n_experts)
+                g_expert_hits[layer * g_track_n_experts + e]++;
+
+            w1_ptrs[valid_k] = (const uint8_t *)w->moe_w1[layer][e];
+            w3_ptrs[valid_k] = (const uint8_t *)w->moe_w3[layer][e];
+            w2_ptrs[valid_k] = (const uint8_t *)w->moe_w2[layer][e];
+            sel_sc [valid_k] = selected_scores[i];
+            valid_k++;
+        }
+
+        if (valid_k > 0 && s_xb_q8k) {
+            /* Dispatch 1: Fused row-split GEMV for w1 + w3 across all valid routed experts */
+            parallel_matmul_q4k_fused_rowsplit_w13(s_gate_buf, s_up_buf, s_xb_q8k,
+                                                   w1_ptrs, w3_ptrs, dim, expert_hdim, valid_k, tp);
+
+            /* Quantize each expert's s_gate_buf output after activation to Q8K */
+            int hb_n_blocks = expert_hdim / TN_Q8K_BLOCK;
+            TnQ8KActBlock *hb_q8k_array[MOE_SCORE_BUF_SIZE];
+
+            for (int i = 0; i < valid_k; i++) {
+                float *hb  = s_gate_buf + (size_t)i * expert_hdim;
+                float *hb2 = s_up_buf   + (size_t)i * expert_hdim;
+
+                if (cfg->act_type == 1) tn_relu2(hb, expert_hdim);
+                else                    tn_silu(hb, expert_hdim);
+                tn_vec_mul(hb, hb, hb2, expert_hdim);
+
+                hb_q8k_array[i] = q8k_buf_ensure(hb_n_blocks);
+                if (hb_q8k_array[i]) {
+                    tn_quantize_q8k(hb_q8k_array[i], hb, hb_n_blocks);
+                }
+            }
+
+            if (w2_qtype == GGUF_TYPE_Q4_K) {
+                /* Dispatch 2: Fused row-split GEMV for w2 across all valid routed experts */
+                parallel_matmul_q4k_fused_rowsplit_w2(s_down_buf, (const TnQ8KActBlock * const *)hb_q8k_array,
+                                                       w2_ptrs, expert_hdim, dim, valid_k, tp);
+
+                for (int i = 0; i < valid_k; i++) {
+                    float sc = sel_sc[i];
+                    float *q = s_down_buf + (size_t)i * dim;
+                    tn_vec_saxpy(s->xb2, sc, q, dim);
+                }
+            } else {
+                /* Fallback for non-Q4K w2 */
+                for (int i = 0; i < valid_k; i++) {
+                    float sc = sel_sc[i];
+                    float *hb = s_gate_buf + (size_t)i * expert_hdim;
+                    int e = selected_experts[i];
+                    size_t n_el = (size_t)expert_hdim * dim;
+                    float *fw = dequant_expert_weight(w->moe_w2[layer][e], w2_qtype, n_el);
+                    if (fw) parallel_matmul_float32(s->q, hb, fw, expert_hdim, dim, tp);
+                    tn_vec_saxpy(s->xb2, sc, s->q, dim);
+                }
+            }
+        }
+    } else if (w->has_expert_quant &&
+               w->expert_w13_quant_type == GGUF_TYPE_Q4_K &&
+               s_moe_threading_mode == TN_MOE_THREADING_ROWSPLIT) {
 
         int w2_qtype = (w->expert_w2_quant_per_layer &&
                         w->expert_w2_quant_per_layer[layer])
