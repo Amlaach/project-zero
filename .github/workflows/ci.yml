@@ -44,6 +44,7 @@ jobs:
           cmake -DCMAKE_C_COMPILER=${{ matrix.compiler }} -DENABLE_TESTS=ON ..
           make -j$(nproc)
           ctest --output-on-failure
+          cd ..
 
       - name: Build (debug + sanitizers)
         run: make debug CC=${{ matrix.compiler }}
