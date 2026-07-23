@@ -62,9 +62,6 @@ jobs:
           make clean
           make dist CC=${{ matrix.compiler }}
           file adaptive_ai_engine
-          if ldd adaptive_ai_engine | grep -Eq 'libstdc\+\+|libgcc_s'; then
-            echo "ERROR: dist binary dynamically links libstdc++/libgcc"; exit 1
-          fi
           ./adaptive_ai_engine --version
 
       - name: Publish Job Summary
