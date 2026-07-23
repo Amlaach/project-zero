@@ -26,10 +26,24 @@ jobs:
           sudo apt-get install -y -q gcc clang make cmake
 
       - name: Build (release)
-        run: make release CC=${{ matrix.compiler }}
+        run: |
+          if ! make release CC=${{ matrix.compiler }} 2>&1 | tee build_release.log; then
+            echo "### ❌ Build (release) Failed (${{ matrix.os }}, ${{ matrix.compiler }})" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:' build_release.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 build_release.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Run tests (Unconstrained)
-        run: make test CC=${{ matrix.compiler }}
+        run: |
+          if ! make test CC=${{ matrix.compiler }} 2>&1 | tee test_run.log; then
+            echo "### ❌ Run tests Failed (${{ matrix.os }}, ${{ matrix.compiler }})" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:|FAIL' test_run.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 test_run.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Build & Test (CMake + Sanitizers)
         run: |
@@ -87,7 +101,14 @@ jobs:
           sudo apt-get install -y -q gcc clang make cmake
 
       - name: Run MoE Architecture Benchmark (${{ matrix.cores_name }})
-        run: ${{ matrix.taskset_cmd }} make test CC=${{ matrix.compiler }}
+        run: |
+          if ! ${{ matrix.taskset_cmd }} make test CC=${{ matrix.compiler }} 2>&1 | tee moe_test.log; then
+            echo "### ❌ MoE Benchmark (${{ matrix.cores_name }}, ${{ matrix.compiler }}) Failed" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:|FAIL' moe_test.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 moe_test.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Publish MoE Matrix Job Summary
         if: always()
@@ -106,10 +127,24 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build (release)
-        run: make release
+        run: |
+          if ! make release 2>&1 | tee macos_release.log; then
+            echo "### ❌ macOS Build (release) Failed" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:' macos_release.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 macos_release.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Run tests
-        run: make test
+        run: |
+          if ! make test 2>&1 | tee macos_test.log; then
+            echo "### ❌ macOS Run tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:|FAIL' macos_test.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 macos_test.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Publish macOS Job Summary
         if: always()
