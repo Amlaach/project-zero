@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <stdbool.h>
 
 #ifndef Q4K_SUPER
 #define Q4K_SUPER 256

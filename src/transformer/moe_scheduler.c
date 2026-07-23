@@ -1,6 +1,7 @@
 #include "transformer/moe_scheduler.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define MAX_TRACK_LAYERS 128
 #define MAX_TRACK_EXPERTS 512
