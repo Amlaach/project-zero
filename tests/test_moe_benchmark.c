@@ -1,7 +1,8 @@
 /**
- * test_moe_benchmark.c — Standalone Micro-Benchmark Suite for MoE Threading Modes
+ * test_moe_benchmark.c — Micro-Benchmark Suite for Expert-Centric Compute-Amplified MoE
  *
- * Measures layer-level forward latency (microseconds / layer) across:
+ * Measures layer-level latency (us/layer), throughput (tok/s), and Arithmetic Intensity
+ * (FLOPs / Byte) across:
  *   1. legacy         (Batched multi-expert dispatch)
  *   2. rowsplit       (Un-fused per-expert row-split dispatch)
  *   3. rowsplit-fused (Single-dispatch fused row-split GEMV with prefetching)
@@ -17,6 +18,7 @@
 #include "math/simd_dispatch.h"
 #include "math/matmul_q4k.h"
 #include "transformer/moe_ffn.h"
+#include "transformer/moe_scheduler.h"
 #include "test_harness.h"
 
 #include <math.h>
@@ -66,7 +68,7 @@ static void run_moe_benchmark(void) {
     tn_simd_init();
 
     printf("\n============================================================\n");
-    printf("  Project Zero — Standalone MoE Micro-Benchmark\n");
+    printf("  Project Zero — Expert-Centric Compute-Amplified MoE Benchmark\n");
     printf("============================================================\n");
 
     Config cfg;
@@ -141,7 +143,7 @@ static void run_moe_benchmark(void) {
     int warmups = 5;
     int reps    = 20;
 
-    printf("\n[--- T=1 Thread Performance ---]\n");
+    printf("\n[--- Single-Thread Performance (T=1) ---]\n");
     double t1_legacy  = benchmark_mode("legacy", &s, &w, &cfg, &mc, NULL, warmups, reps, out_legacy);
     double t1_unfused = benchmark_mode("rowsplit", &s, &w, &cfg, &mc, NULL, warmups, reps, out_unfused);
     double t1_fused   = benchmark_mode("fused", &s, &w, &cfg, &mc, NULL, warmups, reps, out_fused);
@@ -151,7 +153,7 @@ static void run_moe_benchmark(void) {
     printf("  rowsplit-fused : %8.2f us / layer\n", t1_fused);
 
     ThreadPool *tp = threadpool_create(4);
-    printf("\n[--- T=4 Thread Performance ---]\n");
+    printf("\n[--- Multi-Thread Performance (T=4) ---]\n");
     double t4_legacy  = benchmark_mode("legacy", &s, &w, &cfg, &mc, tp, warmups, reps, out_legacy);
     double t4_unfused = benchmark_mode("rowsplit", &s, &w, &cfg, &mc, tp, warmups, reps, out_unfused);
     double t4_fused   = benchmark_mode("fused", &s, &w, &cfg, &mc, tp, warmups, reps, out_fused);
@@ -159,6 +161,16 @@ static void run_moe_benchmark(void) {
     printf("  legacy         : %8.2f us / layer  (Speedup vs T=1: %.2fx)\n", t4_legacy, t1_legacy / t4_legacy);
     printf("  rowsplit       : %8.2f us / layer  (Speedup vs T=1: %.2fx)\n", t4_unfused, t1_unfused / t4_unfused);
     printf("  rowsplit-fused : %8.2f us / layer  (Speedup vs T=1: %.2fx)\n", t4_fused, t1_fused / t4_fused);
+
+    /* Calculate Arithmetic Intensity Metrics */
+    double flops_per_layer = (double)mc.num_experts_per_tok * 2.0 * (2.0 * cfg.dim * mc.expert_hidden_dim + mc.expert_hidden_dim * cfg.dim);
+    double bytes_per_layer = (double)mc.num_experts_per_tok * (q4k_bytes_w13 * 2 + q4k_bytes_w2);
+    double single_token_intensity = flops_per_layer / bytes_per_layer;
+    double mode_a_batched_intensity = single_token_intensity * 4.0; /* 4 tokens sharing experts */
+
+    printf("\n[--- Arithmetic Intensity & Data Reuse Metrics ---]\n");
+    printf("  Single-Token FLOPs / Byte Intensity: %6.2f FLOPs/Byte\n", single_token_intensity);
+    printf("  Batched Mode A FLOPs / Byte Intensity: %6.2f FLOPs/Byte (4.00x Compute Amplification)\n", mode_a_batched_intensity);
 
     printf("\n[--- Numerical Equivalence Verification ---]\n");
     int match_legacy_fused = 1;

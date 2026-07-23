@@ -339,9 +339,13 @@ void moe_ffn_forward(RunState              *s,
             s_gate_buf = (float *)malloc((size_t)top_k * expert_hdim * sizeof(float));
             s_up_buf   = (float *)malloc((size_t)top_k * expert_hdim * sizeof(float));
             s_down_buf = (float *)malloc((size_t)top_k * dim          * sizeof(float));
-            s_batch_top_k = top_k;
-            s_batch_ehdim = expert_hdim;
-            s_batch_dim   = dim;
+            if (s_gate_buf && s_up_buf && s_down_buf) {
+                s_batch_top_k = top_k;
+                s_batch_ehdim = expert_hdim;
+                s_batch_dim   = dim;
+            } else {
+                s_batch_top_k = 0; s_batch_ehdim = 0; s_batch_dim = 0;
+            }
         }
 
         const uint8_t *w1_ptrs[MOE_SCORE_BUF_SIZE];

@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -36,6 +36,9 @@ jobs:
 
       - name: Run tests (Aggressive 2-core constraint via taskset)
         run: taskset -c 0,1 make test CC=${{ matrix.compiler }}
+
+      - name: Run tests (4-core simulation via taskset)
+        run: taskset -c 0-3 make test CC=${{ matrix.compiler }}
 
       - name: Build & Test (CMake + Sanitizers)
         run: |
@@ -66,7 +69,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Build (release)
         run: make release

@@ -5,7 +5,7 @@
 #include "core/moe_config.h"
 #include "core/run_state.h"
 #include "core/weights.h"
-#include "threading/thread_pool.h"
+#include "transformer/moe_scheduler.h"
 #include <stdint.h>
 
 typedef enum {

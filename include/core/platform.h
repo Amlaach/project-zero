@@ -20,6 +20,10 @@
     #define TN_APPLE 1
 #else
     #define TN_APPLE 0
+#if defined(_MSC_VER)
+    #define TN_THREAD_LOCAL __declspec(thread)
+#else
+    #define TN_THREAD_LOCAL __thread
 #endif
 
 /* ── Fixed-width type aliases ──────────────────────────────────────────────── */
