@@ -48,11 +48,18 @@ jobs:
           make clean
           make dist CC=${{ matrix.compiler }}
           file adaptive_ai_engine
-          # Portable build must not dynamically link libstdc++/libgcc.
           if ldd adaptive_ai_engine | grep -Eq 'libstdc\+\+|libgcc_s'; then
             echo "ERROR: dist binary dynamically links libstdc++/libgcc"; exit 1
           fi
           ./adaptive_ai_engine --version
+
+      - name: Publish Job Summary
+        if: always()
+        run: |
+          echo "## 📊 Build & Test Summary — ${{ matrix.os }} (${{ matrix.compiler }})" >> $GITHUB_STEP_SUMMARY
+          echo "| Matrix Target | Compiler | Job Outcome |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
 
   moe-hardware-matrix:
     name: MoE Hardware Simulation (${{ matrix.cores_name }}, ${{ matrix.compiler }})
@@ -82,6 +89,14 @@ jobs:
       - name: Run MoE Architecture Benchmark (${{ matrix.cores_name }})
         run: ${{ matrix.taskset_cmd }} make test CC=${{ matrix.compiler }}
 
+      - name: Publish MoE Matrix Job Summary
+        if: always()
+        run: |
+          echo "## 🚀 MoE Hardware Simulation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Hardware Core Target | Compiler | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| ${{ matrix.cores_name }} | ${{ matrix.compiler }} | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY
+
   build-macos:
     name: Build & Test (macOS)
     runs-on: macos-latest
@@ -95,3 +110,11 @@ jobs:
 
       - name: Run tests
         run: make test
+
+      - name: Publish macOS Job Summary
+        if: always()
+        run: |
+          echo "## 🍏 macOS Build & Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | ${{ job.status }} |" >> $GITHUB_STEP_SUMMARY

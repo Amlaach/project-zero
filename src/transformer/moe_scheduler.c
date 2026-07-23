@@ -63,7 +63,8 @@ void moe_scheduler_plan(MoEExecutionPlan *plan,
         plan->thread_strategy = 0;
 
         /* Build Inverted Index: Expert -> Tokens */
-        bool active_mask[MOE_SCORE_BUF_SIZE] = { false };
+        bool active_mask[MOE_SCORE_BUF_SIZE];
+        memset(active_mask, 0, sizeof(active_mask));
 
         for (int t = 0; t < num_tokens; t++) {
             for (int k = 0; k < top_k; k++) {
