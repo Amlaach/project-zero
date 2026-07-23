@@ -20,6 +20,8 @@
     #define TN_APPLE 1
 #else
     #define TN_APPLE 0
+#endif
+
 #if defined(_MSC_VER)
     #define TN_THREAD_LOCAL __declspec(thread)
 #else

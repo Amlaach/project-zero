@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (${{ matrix.os }})
+    name: Build & Test (${{ matrix.os }}, ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -30,15 +30,6 @@ jobs:
 
       - name: Run tests (Unconstrained)
         run: make test CC=${{ matrix.compiler }}
-
-      - name: Run tests (Aggressive 1-core constraint via taskset)
-        run: taskset -c 0 make test CC=${{ matrix.compiler }}
-
-      - name: Run tests (Aggressive 2-core constraint via taskset)
-        run: taskset -c 0,1 make test CC=${{ matrix.compiler }}
-
-      - name: Run tests (4-core simulation via taskset)
-        run: taskset -c 0-3 make test CC=${{ matrix.compiler }}
 
       - name: Build & Test (CMake + Sanitizers)
         run: |
@@ -62,6 +53,34 @@ jobs:
             echo "ERROR: dist binary dynamically links libstdc++/libgcc"; exit 1
           fi
           ./adaptive_ai_engine --version
+
+  moe-hardware-matrix:
+    name: MoE Hardware Simulation (${{ matrix.cores_name }}, ${{ matrix.compiler }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        cores_name: ["1-Core (taskset -c 0)", "2-Cores (taskset -c 0,1)", "4-Cores (taskset -c 0-3)"]
+        include:
+          - cores_name: "1-Core (taskset -c 0)"
+            taskset_cmd: "taskset -c 0"
+          - cores_name: "2-Cores (taskset -c 0,1)"
+            taskset_cmd: "taskset -c 0,1"
+          - cores_name: "4-Cores (taskset -c 0-3)"
+            taskset_cmd: "taskset -c 0-3"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc clang make cmake
+
+      - name: Run MoE Architecture Benchmark (${{ matrix.cores_name }})
+        run: ${{ matrix.taskset_cmd }} make test CC=${{ matrix.compiler }}
 
   build-macos:
     name: Build & Test (macOS)
