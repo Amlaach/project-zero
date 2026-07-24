@@ -73,7 +73,15 @@ jobs:
           cd ..
 
       - name: Build (debug + sanitizers)
-        run: make debug CC=${{ matrix.compiler }}
+        run: |
+          make clean
+          if ! make debug CC=${{ matrix.compiler }} 2>&1 | tee debug_build.log; then
+            echo "### ❌ Build (debug + sanitizers) Failed (${{ matrix.os }}, ${{ matrix.compiler }})" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+            grep -Ei 'error:|fatal:' debug_build.log | head -n 30 >> $GITHUB_STEP_SUMMARY || tail -n 30 debug_build.log >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
 
       - name: Build (portable dist) + smoke test
         run: |
