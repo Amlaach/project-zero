@@ -10,6 +10,14 @@
 #define MOE_SCORE_BUF_SIZE 256
 #endif
 
+#ifndef MOE_MAX_PLAN_EXPERTS
+#define MOE_MAX_PLAN_EXPERTS 64
+#endif
+
+#ifndef MOE_MAX_PLAN_TOKENS
+#define MOE_MAX_PLAN_TOKENS 16
+#endif
+
 typedef enum {
     MOE_EXEC_EXPERT_CENTRIC = 0,        /* Mode A: Prompt processing & batch inference */
     MOE_EXEC_SINGLE_TOKEN_LOCALITY = 1   /* Mode B: Autoregressive single-token locality */
@@ -18,12 +26,12 @@ typedef enum {
 typedef struct {
     MoEExecutionMode execution_mode;
     int              num_active_experts;
-    int              expert_order[MOE_SCORE_BUF_SIZE];
+    int              expert_order[MOE_MAX_PLAN_EXPERTS];
     
     /* Inverted Index: Expert ID -> Assigned Token Indices */
-    int              expert_token_counts[MOE_SCORE_BUF_SIZE];
-    int              expert_token_indices[MOE_SCORE_BUF_SIZE][64]; /* max 64 tokens per batch */
-    float            expert_token_scores[MOE_SCORE_BUF_SIZE][64];
+    int              expert_token_counts[MOE_MAX_PLAN_EXPERTS];
+    int              expert_token_indices[MOE_MAX_PLAN_EXPERTS][MOE_MAX_PLAN_TOKENS];
+    float            expert_token_scores[MOE_MAX_PLAN_EXPERTS][MOE_MAX_PLAN_TOKENS];
     
     int              prefetch_strategy; /* 0: disabled, 1: next-expert L1 prefetch */
     int              thread_strategy;   /* 0: caller-participates parallel dispatch */

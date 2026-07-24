@@ -64,22 +64,24 @@ void moe_scheduler_plan(MoEExecutionPlan *plan,
         plan->thread_strategy = 0;
 
         /* Build Inverted Index: Expert -> Tokens */
-        bool active_mask[MOE_SCORE_BUF_SIZE];
+        bool active_mask[MOE_MAX_PLAN_EXPERTS];
         memset(active_mask, 0, sizeof(active_mask));
 
         for (int t = 0; t < num_tokens; t++) {
             for (int k = 0; k < top_k; k++) {
                 int e = selected_experts_batch[t * top_k + k];
                 float score = selected_scores_batch[t * top_k + k];
-                if (e < 0 || e >= num_experts || e >= MOE_SCORE_BUF_SIZE) continue;
+                if (e < 0 || e >= num_experts || e >= MOE_MAX_PLAN_EXPERTS) continue;
 
                 if (!active_mask[e]) {
                     active_mask[e] = true;
-                    plan->expert_order[plan->num_active_experts++] = e;
+                    if (plan->num_active_experts < MOE_MAX_PLAN_EXPERTS) {
+                        plan->expert_order[plan->num_active_experts++] = e;
+                    }
                 }
 
                 int cnt = plan->expert_token_counts[e];
-                if (cnt < 64) {
+                if (cnt < MOE_MAX_PLAN_TOKENS) {
                     plan->expert_token_indices[e][cnt] = t;
                     plan->expert_token_scores[e][cnt]  = score;
                     plan->expert_token_counts[e]       = cnt + 1;
@@ -98,12 +100,14 @@ void moe_scheduler_plan(MoEExecutionPlan *plan,
         for (int k = 0; k < top_k; k++) {
             int e = selected_experts_batch[k];
             float score = selected_scores_batch[k];
-            if (e < 0 || e >= num_experts || e >= MOE_SCORE_BUF_SIZE) continue;
+            if (e < 0 || e >= num_experts || e >= MOE_MAX_PLAN_EXPERTS) continue;
 
-            plan->expert_order[plan->num_active_experts++] = e;
-            plan->expert_token_counts[e] = 1;
-            plan->expert_token_indices[e][0] = 0;
-            plan->expert_token_scores[e][0]  = score;
+            if (plan->num_active_experts < MOE_MAX_PLAN_EXPERTS) {
+                plan->expert_order[plan->num_active_experts++] = e;
+                plan->expert_token_counts[e] = 1;
+                plan->expert_token_indices[e][0] = 0;
+                plan->expert_token_scores[e][0]  = score;
+            }
         }
 
         /* Sort active experts by ID for address continuity & cache hit rate */
