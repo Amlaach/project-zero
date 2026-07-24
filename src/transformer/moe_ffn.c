@@ -23,7 +23,9 @@
 
 /* Maximum expert hidden dim supported on stack (for score & index buffers only,
  * not for the FFN output — that uses RunState's hb/hb2 which are heap-allocated) */
+#ifndef MOE_SCORE_BUF_SIZE
 #define MOE_SCORE_BUF_SIZE    MOE_MAX_EXPERTS_STACK
+#endif
 
 /* Lazy-allocated dequantization scratch buffer — holds one expert weight matrix
  * (dim × expert_hdim floats).  Grown as needed; freed at process exit. */

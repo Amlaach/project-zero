@@ -121,6 +121,7 @@ static int count_physical_cores(void) {
 }
 
 int tn_get_optimal_thread_count(void) {
+    (void)count_physical_cores;
     int logical = 1;
 
 #if TN_POSIX
